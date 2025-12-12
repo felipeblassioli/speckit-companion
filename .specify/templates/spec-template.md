@@ -95,6 +95,19 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+## Extension Constraints *(mandatory when applicable)*
+
+<!--
+  If this feature touches VS Code extension behavior (commands, providers, webviews, filesystem, CLIs),
+  add explicit constraints here so the Plan and Tasks can enforce the project constitution.
+-->
+
+- **EC-001 (Layering)**: Changes MUST respect Commands/Providers/Services boundaries (no business logic in providers).
+- **EC-002 (Remote-safe FS)**: Workspace file I/O MUST use VS Code APIs (`vscode.Uri`, `workspace.fs`) with `try/catch`.
+- **EC-003 (Webview security)**: If rendering workspace content, MUST use CSP + sanitization; typed message protocol.
+- **EC-004 (TypeScript safety)**: No `any`, no `enum`, no floating promises; explicit exported signatures.
+- **EC-005 (Testing)**: Behavior changes MUST include unit tests unless explicitly deferred with rationale.
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]

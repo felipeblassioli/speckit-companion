@@ -3,7 +3,7 @@
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
+**Note**: This template is filled in by the `/speckit.plan` command.
 
 ## Summary
 
@@ -31,7 +31,15 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] **Workflow alignment**: Feature supports Spec → Plan → Tasks (or is explicitly supporting infrastructure).
+- [ ] **Layering boundaries**: commands are thin; providers are UI-only; business logic in features/services;
+      watchers only watch; webview uses typed messages.
+- [ ] **Remote-safe file I/O**: workspace files use `vscode.Uri` + `workspace.fs` with `try/catch` and actionable
+      error messages; no Node `fs` for workspace files.
+- [ ] **CLI safety**: no shell-injection risk (no concatenated untrusted input); prefer prompt-file redirection.
+- [ ] **Webview security (if applicable)**: strict CSP + sanitized content; validate inbound messages.
+- [ ] **TypeScript safety**: no `any`, no `enum`, no floating promises; explicit exported signatures.
+- [ ] **Testing**: unit tests for behavior changes unless explicitly deferred with rationale; deterministic tests.
 
 ## Project Structure
 
