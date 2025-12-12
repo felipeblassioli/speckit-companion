@@ -1,14 +1,5 @@
 # SpecKit Companion
 
-![Build Status](https://img.shields.io/github/actions/workflow/status/alfredoperez/speckit-companion/release.yml?label=build)
-![VS Code](https://img.shields.io/badge/VS%20Code-%5E1.84.0-blue)
-![GitHub Release](https://img.shields.io/github/v/release/alfredoperez/speckit-companion?label=version)
-![License](https://img.shields.io/badge/license-MIT-blue)
-
-A VSCode extension that brings spec-driven development to AI coding assistants using [GitHub SpecKit](https://github.com/github/spec-kit).
-
-![SpecKit Companion Sidebar](screenshots/specify-extension.png)
-
 ## Features
 
 ### Spec-Driven Development with GitHub SpecKit

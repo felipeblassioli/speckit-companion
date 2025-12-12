@@ -203,4 +203,12 @@ export class CopilotCliProvider implements IAIProvider {
         const prompt = command.startsWith('/') ? command.substring(1) : command;
         return this.executeInTerminal(`Run the following command: ${prompt}`, title);
     }
+
+    /**
+     * Execute a prompt in headless/background mode (mutating)
+     * For Copilot, mutating operations are the same as regular headless for now
+     */
+    async executeHeadlessMutating(prompt: string): Promise<AIExecutionResult> {
+        return this.executeHeadless(prompt);
+    }
 }

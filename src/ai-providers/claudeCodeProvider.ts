@@ -246,6 +246,15 @@ export class ClaudeCodeProvider implements IAIProvider {
         }
     }
 
+    /**
+     * Execute a prompt in headless/background mode (mutating)
+     * For Claude, mutating operations still use bypassPermissions mode
+     */
+    async executeHeadlessMutating(prompt: string): Promise<AIExecutionResult> {
+        // For Claude, mutating operations are the same as regular headless for now
+        return this.executeHeadless(prompt);
+    }
+
     // Legacy method aliases for backwards compatibility
     async invokeClaudeSplitView(prompt: string, title?: string): Promise<vscode.Terminal> {
         return this.executeInTerminal(prompt, title);

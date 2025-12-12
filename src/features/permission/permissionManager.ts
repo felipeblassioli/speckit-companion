@@ -109,12 +109,12 @@ export class PermissionManager {
                 if (confirm === 'Uninstall') {
                     try {
                         // Execute uninstall command
-                        await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', 'alfredo-dev.speckit-companion');
+                        await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', 'felipeblassioli.speckit-companion');
                         this.outputChannel.appendLine('[PermissionManager] Uninstall command executed');
                     } catch (error) {
                         this.outputChannel.appendLine(`[PermissionManager] Failed to uninstall: ${error}`);
                     }
-                    await vscode.commands.executeCommand('extension.open', 'alfredo-dev.speckit-companion');
+                    await vscode.commands.executeCommand('extension.open', 'felipeblassioli.speckit-companion');
                     break;
                 }
 

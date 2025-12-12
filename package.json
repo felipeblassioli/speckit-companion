@@ -4,7 +4,7 @@
   "description": "VS Code companion for GitHub SpecKit - spec-driven development with AI assistants",
   "version": "0.2.0",
   "license": "MIT",
-  "publisher": "alfredoperez",
+  "publisher": "felipeblassioli",
   "icon": "icon.png",
   "repository": {
     "type": "git",
@@ -494,12 +494,14 @@
           "enum": [
             "claude",
             "gemini",
-            "copilot"
+            "copilot",
+            "cursor-agent"
           ],
           "enumDescriptions": [
             "Claude Code - Full feature support (steering, agents, hooks, MCP)",
             "Gemini CLI - Steering and MCP support",
-            "GitHub Copilot CLI - Steering, agents, and MCP support"
+            "GitHub Copilot CLI - Steering, agents, and MCP support",
+            "Cursor Agent - Spec-driven development with cursor-agent CLI"
           ],
           "scope": "machine",
           "order": 2,
@@ -518,6 +520,13 @@
           "scope": "machine",
           "order": 4,
           "description": "Path to GitHub Copilot CLI executable (ghcs)"
+        },
+        "speckit.cursorAgentPath": {
+          "type": "string",
+          "default": "cursor-agent",
+          "scope": "machine",
+          "order": 5,
+          "description": "Path to Cursor Agent CLI executable"
         },
         "speckit.views.specs.visible": {
           "type": "boolean",

@@ -51,8 +51,8 @@ export function registerSpecKitCommands(
 
             NotificationUtils.showAutoDismissNotification('Creating spec with SpecKit. Check the terminal for progress.');
 
-            const prompt = `/speckit.specify ${sanitizedDescription}`;
-            await getAIProvider().executeInTerminal(prompt, 'SpecKit - Creating Spec');
+            const command = `/speckit.specify ${sanitizedDescription}`;
+            await getAIProvider().executeSlashCommand(command, 'SpecKit - Creating Spec');
         })
     );
 
@@ -123,8 +123,8 @@ function registerPhaseCommands(
                     return;
                 }
 
-                const prompt = `/speckit.${cmd.name} ${targetDir}`;
-                await getAIProvider().executeInTerminal(prompt, `SpecKit - ${cmd.title}`);
+                const command = `/speckit.${cmd.name} ${targetDir}`;
+                await getAIProvider().executeSlashCommand(command, `SpecKit - ${cmd.title}`);
             })
         );
     }
@@ -134,8 +134,8 @@ function registerPhaseCommands(
         vscode.commands.registerCommand('speckit.constitution', async () => {
             outputChannel.appendLine(`[SpecKit] Constitution command triggered`);
 
-            const prompt = `/speckit.constitution`;
-            await getAIProvider().executeInTerminal(prompt, 'SpecKit - Constitution');
+            const command = `/speckit.constitution`;
+            await getAIProvider().executeSlashCommand(command, 'SpecKit - Constitution');
         })
     );
 }

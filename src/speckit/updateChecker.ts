@@ -57,7 +57,7 @@ export class UpdateChecker {
      * Get current extension version
      */
     private getCurrentVersion(): string | undefined {
-        const extension = vscode.extensions.getExtension('alfredo-dev.speckit-companion');
+        const extension = vscode.extensions.getExtension('felipeblassioli.speckit-companion');
         return extension?.packageJSON.version;
     }
 

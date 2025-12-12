@@ -45,12 +45,19 @@ export interface IAIProvider {
      * @param autoExecute If false, shows command but waits for user to press Enter (default: true)
      */
     executeSlashCommand(command: string, title?: string, autoExecute?: boolean): Promise<vscode.Terminal>;
+
+    /**
+     * Execute a prompt in headless/background mode (mutating - will use --force for cursor-agent)
+     * @param prompt The prompt to send to the AI
+     * @returns Execution result with exit code
+     */
+    executeHeadlessMutating(prompt: string): Promise<AIExecutionResult>;
 }
 
 /**
  * Supported AI provider types
  */
-export type AIProviderType = 'claude' | 'gemini' | 'copilot';
+export type AIProviderType = 'claude' | 'gemini' | 'copilot' | 'cursor-agent';
 
 /**
  * Provider configuration paths and patterns
@@ -111,6 +118,17 @@ export const PROVIDER_PATHS: Record<AIProviderType, ProviderPaths> = {
         skillsDir: '', // Not supported
         skillsPattern: '',
         mcpConfigPath: '.copilot/mcp-config.json',
+        supportsHooks: false,
+    },
+    'cursor-agent': {
+        steeringFile: 'CLAUDE.md',
+        steeringDir: '.claude/steering',
+        steeringPattern: '*.md',
+        agentsDir: '.claude/agents',
+        agentsPattern: '*.md',
+        skillsDir: '', // Not supported
+        skillsPattern: '',
+        mcpConfigPath: '.claude/settings.json',
         supportsHooks: false,
     },
 };

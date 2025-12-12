@@ -197,4 +197,12 @@ export class GeminiCliProvider implements IAIProvider {
         const slashCommand = command.startsWith('/') ? command : `/${command}`;
         return this.executeInTerminal(slashCommand, title);
     }
+
+    /**
+     * Execute a prompt in headless/background mode (mutating)
+     * For Gemini, mutating operations are the same as regular headless for now
+     */
+    async executeHeadlessMutating(prompt: string): Promise<AIExecutionResult> {
+        return this.executeHeadless(prompt);
+    }
 }

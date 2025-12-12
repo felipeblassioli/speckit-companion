@@ -69,7 +69,7 @@ Please update CLAUDE.md to remove any references to this deleted document.`;
 
             await NotificationUtils.showAutoDismissNotification(`Deleting "${documentName}" and updating CLAUDE.md...`);
 
-            const result = await getAIProvider().executeHeadless(prompt);
+            const result = await getAIProvider().executeHeadlessMutating(prompt);
 
             if (result.exitCode === 0) {
                 await NotificationUtils.showAutoDismissNotification(`Steering document "${documentName}" deleted and CLAUDE.md updated.`);
