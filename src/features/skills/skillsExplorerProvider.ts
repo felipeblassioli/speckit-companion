@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { SkillManager, SkillInfo, SkillType } from './skillManager';
 import { getConfiguredProviderType } from '../../ai-providers/aiProvider';
+import { shouldShowFeature } from '../../core/utils/capabilityPolicy';
 
 export class SkillsExplorerProvider implements vscode.TreeDataProvider<SkillItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<SkillItem | undefined | null | void> = new vscode.EventEmitter<SkillItem | undefined | null | void>();
@@ -42,13 +43,17 @@ export class SkillsExplorerProvider implements vscode.TreeDataProvider<SkillItem
 
         const providerType = getConfiguredProviderType();
 
-        // Skills are only supported for Claude Code
-        if (providerType !== 'claude' && !element) {
-            return [new SkillItem(
-                'Skills only available for Claude Code',
-                vscode.TreeItemCollapsibleState.None,
-                'skill-not-supported'
-            )];
+        // Check capability policy for skills feature
+        if (!element) {
+            const visibility = await shouldShowFeature('skills', 'list_skills');
+            if (!visibility.show) {
+                // Show single informational affordance
+                return [new SkillItem(
+                    visibility.whyNot || 'Skills are not supported by the current provider.',
+                    vscode.TreeItemCollapsibleState.None,
+                    'skill-not-supported'
+                )];
+            }
         }
 
         if (!element) {

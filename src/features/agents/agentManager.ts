@@ -193,7 +193,10 @@ export class AgentManager {
     private async parseAgentFile(filePath: string, type: 'project' | 'user' | 'plugin'): Promise<AgentInfo | null> {
         try {
             this.outputChannel.appendLine(`[AgentManager] Parsing agent file: ${filePath}`);
-            const content = await fs.promises.readFile(filePath, 'utf8');
+            // Use vscode.workspace.fs for remote-safe I/O
+            const fileUri = vscode.Uri.file(filePath);
+            const fileContent = await vscode.workspace.fs.readFile(fileUri);
+            const content = Buffer.from(fileContent).toString('utf8');
             
             // Extract YAML frontmatter
             const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
@@ -237,7 +240,30 @@ export class AgentManager {
     }
 
     /**
-     * Check if agent exists
+     * Check if agent exists (async version for remote-safe I/O)
+     */
+    async checkAgentExistsAsync(agentName: string, location: 'project' | 'user'): Promise<boolean> {
+        const basePath = location === 'project' 
+            ? (this.workspaceRoot ? path.join(this.workspaceRoot, '.claude/agents/kfc') : null)
+            : path.join(os.homedir(), '.claude/agents');
+
+        if (!basePath) {
+            return false;
+        }
+
+        const agentPath = path.join(basePath, `${agentName}.md`);
+        const agentUri = vscode.Uri.file(agentPath);
+        try {
+            await vscode.workspace.fs.stat(agentUri);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
+     * Check if agent exists (sync version - kept for backward compatibility)
+     * @deprecated Use checkAgentExistsAsync for remote-safe I/O
      */
     checkAgentExists(agentName: string, location: 'project' | 'user'): boolean {
         const basePath = location === 'project' 
@@ -258,15 +284,20 @@ export class AgentManager {
     async getPluginAgents(): Promise<AgentInfo[]> {
         const agents: AgentInfo[] = [];
         const installedPluginsPath = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
+        const installedPluginsUri = vscode.Uri.file(installedPluginsPath);
 
         try {
-            if (!fs.existsSync(installedPluginsPath)) {
+            // Check if file exists (remote-safe)
+            try {
+                await vscode.workspace.fs.stat(installedPluginsUri);
+            } catch {
                 this.outputChannel.appendLine('[AgentManager] No installed_plugins.json found, skipping plugin agents');
                 return agents;
             }
 
-            const installedPluginsContent = await fs.promises.readFile(installedPluginsPath, 'utf-8');
-            const installedPlugins = JSON.parse(installedPluginsContent);
+            // Read file (remote-safe)
+            const installedPluginsContent = await vscode.workspace.fs.readFile(installedPluginsUri);
+            const installedPlugins = JSON.parse(Buffer.from(installedPluginsContent).toString('utf-8'));
 
             if (!installedPlugins.plugins) {
                 this.outputChannel.appendLine('[AgentManager] No plugins found in installed_plugins.json');
@@ -281,8 +312,16 @@ export class AgentManager {
                 }
 
                 const agentsDir = path.join(pluginData.installPath, 'agents');
+                const agentsDirUri = vscode.Uri.file(agentsDir);
 
-                if (!fs.existsSync(agentsDir)) {
+                // Check if directory exists (remote-safe)
+                try {
+                    const stat = await vscode.workspace.fs.stat(agentsDirUri);
+                    if (stat.type !== vscode.FileType.Directory) {
+                        this.outputChannel.appendLine(`[AgentManager] Plugin ${pluginKey} agents path is not a directory`);
+                        continue;
+                    }
+                } catch {
                     this.outputChannel.appendLine(`[AgentManager] Plugin ${pluginKey} has no agents directory`);
                     continue;
                 }
@@ -315,7 +354,37 @@ export class AgentManager {
     }
 
     /**
+     * Get agent file path (async version for remote-safe I/O)
+     */
+    async getAgentPathAsyncSafe(agentName: string): Promise<string | null> {
+        // Check project agents first
+        if (this.workspaceRoot) {
+            const projectPath = path.join(this.workspaceRoot, '.claude/agents/kfc', `${agentName}.md`);
+            const projectUri = vscode.Uri.file(projectPath);
+            try {
+                await vscode.workspace.fs.stat(projectUri);
+                return projectPath;
+            } catch {
+                // File doesn't exist
+            }
+        }
+
+        // Check user agents
+        const userPath = path.join(os.homedir(), '.claude/agents', `${agentName}.md`);
+        const userUri = vscode.Uri.file(userPath);
+        try {
+            await vscode.workspace.fs.stat(userUri);
+            return userPath;
+        } catch {
+            // File doesn't exist
+        }
+
+        return null;
+    }
+
+    /**
      * Get agent file path (sync version for simple lookups)
+     * @deprecated Use getAgentPathAsyncSafe for remote-safe I/O
      */
     getAgentPath(agentName: string): string | null {
         // Check project agents first

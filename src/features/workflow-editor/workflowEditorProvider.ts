@@ -58,7 +58,7 @@ export class WorkflowEditorProvider implements vscode.CustomTextEditorProvider {
 
         // Set initial HTML content
         const content = document.getText();
-        const specInfo = parseSpecInfo(document);
+        const specInfo = await parseSpecInfo(document);
         webviewPanel.webview.html = generateWebviewHtml(
             webviewPanel.webview,
             this.context.extensionUri,

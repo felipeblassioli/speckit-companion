@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import type { SpecInfo } from '../../../core/types';
 import { parseSpecInfo } from './specInfoParser';
 
@@ -22,12 +21,16 @@ export class WorkflowActionHandlers {
      * Switch to a different document in the same spec folder
      */
     async switchToDocument(currentDocument: vscode.TextDocument, fileName: string): Promise<void> {
-        const specInfo = parseSpecInfo(currentDocument);
+        const specInfo = await parseSpecInfo(currentDocument);
         const targetPath = path.join(specInfo.specDir, fileName);
         const targetUri = vscode.Uri.file(targetPath);
 
-        if (fs.existsSync(targetPath)) {
+        // Check if file exists (remote-safe I/O)
+        try {
+            await vscode.workspace.fs.stat(targetUri);
             await vscode.commands.executeCommand('vscode.openWith', targetUri, 'speckit.workflowEditor');
+        } catch {
+            // File doesn't exist - ignore
         }
     }
 
@@ -37,7 +40,7 @@ export class WorkflowActionHandlers {
     async runEnhancementCommand(document: vscode.TextDocument, command: string): Promise<void> {
         this.outputChannel.appendLine(`[WorkflowEditor] Enhancement command: ${command}`);
 
-        const specInfo = parseSpecInfo(document);
+        const specInfo = await parseSpecInfo(document);
         await vscode.commands.executeCommand(`speckit.${command}`, specInfo.specDir);
     }
 
@@ -103,7 +106,7 @@ Spec file: ${document.fileName}`;
     async approveAndContinue(document: vscode.TextDocument): Promise<void> {
         this.outputChannel.appendLine(`[WorkflowEditor] Approve and continue`);
 
-        const specInfo = parseSpecInfo(document);
+        const specInfo = await parseSpecInfo(document);
 
         // If we're on tasks phase (phase 3), run implement
         if (specInfo.currentPhase === 3) {
@@ -120,11 +123,12 @@ Spec file: ${document.fileName}`;
         const nextFilePath = path.join(specInfo.specDir, nextFileName);
         const nextFileUri = vscode.Uri.file(nextFilePath);
 
-        // Check if next file exists
-        if (fs.existsSync(nextFilePath)) {
+        // Check if next file exists (remote-safe I/O)
+        try {
+            await vscode.workspace.fs.stat(nextFileUri);
             // Open with the workflow editor
             await vscode.commands.executeCommand('vscode.openWith', nextFileUri, 'speckit.workflowEditor');
-        } else {
+        } catch {
             // Generate immediately without confirmation
             await this.generateContent(document, nextPhase === 2 ? 'plan' : 'tasks');
         }
@@ -136,7 +140,7 @@ Spec file: ${document.fileName}`;
     async regenerateDocument(document: vscode.TextDocument): Promise<void> {
         this.outputChannel.appendLine(`[WorkflowEditor] Regenerate document`);
 
-        const specInfo = parseSpecInfo(document);
+        const specInfo = await parseSpecInfo(document);
         let command: string;
 
         if (specInfo.currentPhase === 1) {
@@ -156,7 +160,7 @@ Spec file: ${document.fileName}`;
     async navigateToPhase(document: vscode.TextDocument, phase: string): Promise<void> {
         this.outputChannel.appendLine(`[WorkflowEditor] Navigate to phase: ${phase}`);
 
-        const specInfo = parseSpecInfo(document);
+        const specInfo = await parseSpecInfo(document);
 
         // SpecKit format file names
         const fileName = phase === 'spec' ? 'spec.md' :
@@ -181,7 +185,7 @@ Spec file: ${document.fileName}`;
     async generateContent(document: vscode.TextDocument, command: string): Promise<void> {
         this.outputChannel.appendLine(`[WorkflowEditor] Generate content: ${command}`);
 
-        const specInfo = parseSpecInfo(document);
+        const specInfo = await parseSpecInfo(document);
         await vscode.commands.executeCommand(`speckit.${command}`, specInfo.specDir);
     }
 }

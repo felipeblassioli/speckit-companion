@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { SteeringManager } from './steeringManager';
 import { getConfiguredProviderType, getProviderPaths, AIProviderType } from '../../ai-providers/aiProvider';
 
@@ -53,40 +52,58 @@ export class SteeringExplorerProvider implements vscode.TreeDataProvider<Steerin
             const providerType = getConfiguredProviderType();
             const providerPaths = getProviderPaths(providerType);
 
-            // Get provider-specific paths
-            const { globalPath, projectPath, globalExists, projectExists } = this.getSteeringFilePaths(providerType, providerPaths);
+            // Get canonical and legacy steering file paths (canonical first, then legacy)
+            const { canonicalPath, canonicalExists, legacyGlobalPath, legacyProjectPath, legacyGlobalExists, legacyProjectExists } = 
+                await this.getSteeringFilePaths(providerType, providerPaths);
 
-            // Show Global Rule if exists
-            if (globalExists && globalPath) {
+            // Show canonical steering file if it exists
+            if (canonicalExists && canonicalPath) {
                 items.push(new SteeringItem(
-                    'Global Rule',
+                    'Canonical Steering',
+                    vscode.TreeItemCollapsibleState.None,
+                    'steering-canonical',
+                    canonicalPath,
+                    this.context,
+                    {
+                        command: 'vscode.open',
+                        title: 'Open Canonical Steering',
+                        arguments: [vscode.Uri.file(canonicalPath)]
+                    }
+                ));
+            }
+
+            // Show legacy global steering file if it exists
+            if (legacyGlobalExists && legacyGlobalPath) {
+                items.push(new SteeringItem(
+                    'Global Rule (Legacy)',
                     vscode.TreeItemCollapsibleState.None,
                     'claude-md-global',
-                    globalPath,
+                    legacyGlobalPath,
                     this.context,
                     {
                         command: 'vscode.open',
                         title: `Open Global ${providerPaths.steeringFile}`,
-                        arguments: [vscode.Uri.file(globalPath)]
+                        arguments: [vscode.Uri.file(legacyGlobalPath)]
                     }
                 ));
             }
 
-            // Show Project Rule if exists
-            if (projectExists && projectPath) {
+            // Show legacy project steering file if it exists
+            if (legacyProjectExists && legacyProjectPath) {
                 items.push(new SteeringItem(
-                    'Project Rule',
+                    'Project Rule (Legacy)',
                     vscode.TreeItemCollapsibleState.None,
                     'claude-md-project',
-                    projectPath,
+                    legacyProjectPath,
                     this.context,
                     {
                         command: 'vscode.open',
                         title: `Open Project ${providerPaths.steeringFile}`,
-                        arguments: [vscode.Uri.file(projectPath)]
+                        arguments: [vscode.Uri.file(legacyProjectPath)]
                     }
                 ));
             }
+
 
             // Traditional steering documents - provider-specific
             if (vscode.workspace.workspaceFolders && providerPaths.steeringDir) {
@@ -104,7 +121,7 @@ export class SteeringExplorerProvider implements vscode.TreeDataProvider<Steerin
 
             // Add create buttons for missing files (Claude only for now)
             if (providerType === 'claude') {
-                if (!globalExists) {
+                if (!legacyGlobalExists) {
                     items.push(new SteeringItem(
                         'Create Global Rule',
                         vscode.TreeItemCollapsibleState.None,
@@ -118,7 +135,7 @@ export class SteeringExplorerProvider implements vscode.TreeDataProvider<Steerin
                     ));
                 }
 
-                if (vscode.workspace.workspaceFolders && !projectExists) {
+                if (vscode.workspace.workspaceFolders && !legacyProjectExists) {
                     items.push(new SteeringItem(
                         'Create Project Rule',
                         vscode.TreeItemCollapsibleState.None,
@@ -168,41 +185,86 @@ export class SteeringExplorerProvider implements vscode.TreeDataProvider<Steerin
     }
 
     /**
-     * Get provider-specific steering file paths
+     * Get canonical and legacy steering file paths
+     * Returns canonical first (preferred), then legacy paths for backward compatibility
      */
-    private getSteeringFilePaths(providerType: AIProviderType, providerPaths: ReturnType<typeof getProviderPaths>): {
-        globalPath: string | null;
-        projectPath: string | null;
-        globalExists: boolean;
-        projectExists: boolean;
-    } {
+    private async getSteeringFilePaths(providerType: AIProviderType, providerPaths: ReturnType<typeof getProviderPaths>): Promise<{
+        canonicalPath: string | null;
+        canonicalExists: boolean;
+        legacyGlobalPath: string | null;
+        legacyProjectPath: string | null;
+        legacyGlobalExists: boolean;
+        legacyProjectExists: boolean;
+    }> {
         const home = process.env.HOME || '';
         const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
 
-        let globalPath: string | null = null;
-        let projectPath: string | null = null;
+        // Canonical paths (provider-agnostic)
+        const canonicalPath = workspaceRoot ? path.join(workspaceRoot, providerPaths.canonicalSteeringFile) : null;
+
+        // Legacy paths (provider-specific)
+        let legacyGlobalPath: string | null = null;
+        let legacyProjectPath: string | null = null;
 
         switch (providerType) {
             case 'claude':
-                globalPath = path.join(home, '.claude', 'CLAUDE.md');
-                projectPath = workspaceRoot ? path.join(workspaceRoot, 'CLAUDE.md') : null;
+                legacyGlobalPath = path.join(home, '.claude', 'CLAUDE.md');
+                legacyProjectPath = workspaceRoot ? path.join(workspaceRoot, 'CLAUDE.md') : null;
                 break;
             case 'gemini':
-                globalPath = path.join(home, '.gemini', 'GEMINI.md');
-                projectPath = workspaceRoot ? path.join(workspaceRoot, 'GEMINI.md') : null;
+                legacyGlobalPath = path.join(home, '.gemini', 'GEMINI.md');
+                legacyProjectPath = workspaceRoot ? path.join(workspaceRoot, 'GEMINI.md') : null;
                 break;
             case 'copilot':
                 // Copilot doesn't have a global file in the same way
-                globalPath = null;
-                projectPath = workspaceRoot ? path.join(workspaceRoot, '.github', 'copilot-instructions.md') : null;
+                legacyGlobalPath = null;
+                legacyProjectPath = workspaceRoot ? path.join(workspaceRoot, '.github', 'copilot-instructions.md') : null;
+                break;
+            case 'cursor-agent':
+                legacyGlobalPath = path.join(home, '.claude', 'CLAUDE.md');
+                legacyProjectPath = workspaceRoot ? path.join(workspaceRoot, 'CLAUDE.md') : null;
                 break;
         }
 
+        // Check file existence using remote-safe I/O
+        let canonicalExists = false;
+        let legacyGlobalExists = false;
+        let legacyProjectExists = false;
+
+        if (canonicalPath) {
+            try {
+                await vscode.workspace.fs.stat(vscode.Uri.file(canonicalPath));
+                canonicalExists = true;
+            } catch {
+                canonicalExists = false;
+            }
+        }
+
+        if (legacyGlobalPath) {
+            try {
+                await vscode.workspace.fs.stat(vscode.Uri.file(legacyGlobalPath));
+                legacyGlobalExists = true;
+            } catch {
+                legacyGlobalExists = false;
+            }
+        }
+
+        if (legacyProjectPath) {
+            try {
+                await vscode.workspace.fs.stat(vscode.Uri.file(legacyProjectPath));
+                legacyProjectExists = true;
+            } catch {
+                legacyProjectExists = false;
+            }
+        }
+
         return {
-            globalPath,
-            projectPath,
-            globalExists: globalPath ? fs.existsSync(globalPath) : false,
-            projectExists: projectPath ? fs.existsSync(projectPath) : false,
+            canonicalPath,
+            canonicalExists,
+            legacyGlobalPath,
+            legacyProjectPath,
+            legacyGlobalExists,
+            legacyProjectExists,
         };
     }
 

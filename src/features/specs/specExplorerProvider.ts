@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 
 export interface SpecInfo {
     name: string;
@@ -109,10 +108,10 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
         } else if (element.contextValue === 'spec') {
             // Show spec documents (spec.md, plan.md, tasks.md)
             const specPath = element.specPath || `specs/${element.specName}`;
-            return this.getSpecDocuments(element.specName!, specPath);
+            return await this.getSpecDocuments(element.specName!, specPath);
         } else if (element.contextValue?.startsWith('spec-document-') && element.relatedDocs && element.relatedDocs.length > 0) {
             // Show related documents as children
-            return this.getRelatedDocItems(element);
+            return await this.getRelatedDocItems(element);
         }
 
         return [];
@@ -121,12 +120,10 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
     /**
      * Check document status based on file existence and content
      */
-    private getDocumentStatus(fullPath: string): DocumentStatus {
+    private async getDocumentStatus(fullPath: string): Promise<DocumentStatus> {
         try {
-            if (!fs.existsSync(fullPath)) {
-                return 'empty';
-            }
-            const content = fs.readFileSync(fullPath, 'utf-8').trim();
+            await vscode.workspace.fs.stat(vscode.Uri.file(fullPath));
+            const content = (await vscode.workspace.fs.readFile(vscode.Uri.file(fullPath))).toString().trim();
             if (content.length === 0) {
                 return 'empty';
             }
@@ -145,12 +142,13 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
      * Scan for related documents in a spec folder
      * Returns files that are not spec.md, plan.md, or tasks.md
      */
-    private getRelatedDocs(specFullPath: string): string[] {
+    private async getRelatedDocs(specFullPath: string): Promise<string[]> {
         const mainDocs = ['spec.md', 'plan.md', 'tasks.md'];
         try {
-            const files = fs.readdirSync(specFullPath);
-            return files
-                .filter(f => f.endsWith('.md') && !mainDocs.includes(f))
+            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(specFullPath));
+            return entries
+                .filter(([name, type]) => type === vscode.FileType.File && name.endsWith('.md') && !mainDocs.includes(name))
+                .map(([name]) => name)
                 .sort();
         } catch {
             return [];
@@ -160,7 +158,7 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
     /**
      * Create tree items for related documents
      */
-    private getRelatedDocItems(parentElement: SpecItem): SpecItem[] {
+    private async getRelatedDocItems(parentElement: SpecItem): Promise<SpecItem[]> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder || !parentElement.relatedDocs) {
             return [];
@@ -169,11 +167,12 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
         const basePath = workspaceFolder.uri.fsPath;
         const specPath = parentElement.specPath || `specs/${parentElement.specName}`;
 
-        return parentElement.relatedDocs.map(fileName => {
+        const items: SpecItem[] = [];
+        for (const fileName of parentElement.relatedDocs) {
             const fullPath = path.join(basePath, specPath, fileName);
-            const status = this.getDocumentStatus(fullPath);
+            const status = await this.getDocumentStatus(fullPath);
 
-            return new SpecItem(
+            items.push(new SpecItem(
                 fileName.replace('.md', ''),
                 vscode.TreeItemCollapsibleState.None,
                 'spec-related-doc',
@@ -191,14 +190,16 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
                 `${specPath}/${fileName}`,
                 specPath,
                 status
-            );
-        });
+            ));
+        }
+
+        return items;
     }
 
     /**
      * Get SpecKit documents (spec.md, plan.md, tasks.md) with related docs grouped under plan
      */
-    private getSpecDocuments(specName: string, specPath: string): SpecItem[] {
+    private async getSpecDocuments(specName: string, specPath: string): Promise<SpecItem[]> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
         if (!workspaceFolder) {
             return [];
@@ -208,7 +209,7 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
         const specFullPath = path.join(basePath, specPath);
 
         // Scan for related documents
-        const relatedDocs = this.getRelatedDocs(specFullPath);
+        const relatedDocs = await this.getRelatedDocs(specFullPath);
 
         // Open file directly with the workflow editor
         const createOpenCommand = (fileName: string, title: string) => ({
@@ -221,9 +222,9 @@ export class SpecExplorerProvider implements vscode.TreeDataProvider<SpecItem> {
         });
 
         // Check status of each document
-        const specStatus = this.getDocumentStatus(path.join(basePath, specPath, 'spec.md'));
-        const planStatus = this.getDocumentStatus(path.join(basePath, specPath, 'plan.md'));
-        const tasksStatus = this.getDocumentStatus(path.join(basePath, specPath, 'tasks.md'));
+        const specStatus = await this.getDocumentStatus(path.join(basePath, specPath, 'spec.md'));
+        const planStatus = await this.getDocumentStatus(path.join(basePath, specPath, 'plan.md'));
+        const tasksStatus = await this.getDocumentStatus(path.join(basePath, specPath, 'tasks.md'));
 
         // Plan is collapsible if it has related docs
         const planCollapsible = relatedDocs.length > 0

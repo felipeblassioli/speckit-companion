@@ -63,9 +63,13 @@ export type AIProviderType = 'claude' | 'gemini' | 'copilot' | 'cursor-agent';
  * Provider configuration paths and patterns
  */
 export interface ProviderPaths {
-    /** Main steering file name (e.g., CLAUDE.md, GEMINI.md) */
+    /** Canonical provider-agnostic steering file (workspace root) */
+    canonicalSteeringFile: string; // e.g., '.speckit/STEERING.md'
+    /** Canonical provider-agnostic steering directory */
+    canonicalSteeringDir: string; // e.g., '.speckit/steering'
+    /** Main steering file name (legacy, e.g., CLAUDE.md, GEMINI.md) */
     steeringFile: string;
-    /** Directory for additional steering files */
+    /** Directory for additional steering files (legacy) */
     steeringDir: string;
     /** Pattern for steering files in the directory */
     steeringPattern: string;
@@ -88,6 +92,8 @@ export interface ProviderPaths {
  */
 export const PROVIDER_PATHS: Record<AIProviderType, ProviderPaths> = {
     claude: {
+        canonicalSteeringFile: '.speckit/STEERING.md',
+        canonicalSteeringDir: '.speckit/steering',
         steeringFile: 'CLAUDE.md',
         steeringDir: '.claude/steering',
         steeringPattern: '*.md',
@@ -99,6 +105,8 @@ export const PROVIDER_PATHS: Record<AIProviderType, ProviderPaths> = {
         supportsHooks: true,
     },
     gemini: {
+        canonicalSteeringFile: '.speckit/STEERING.md',
+        canonicalSteeringDir: '.speckit/steering',
         steeringFile: 'GEMINI.md',
         steeringDir: '', // Gemini uses hierarchical GEMINI.md files
         steeringPattern: 'GEMINI.md',
@@ -110,6 +118,8 @@ export const PROVIDER_PATHS: Record<AIProviderType, ProviderPaths> = {
         supportsHooks: false,
     },
     copilot: {
+        canonicalSteeringFile: '.speckit/STEERING.md',
+        canonicalSteeringDir: '.speckit/steering',
         steeringFile: '.github/copilot-instructions.md',
         steeringDir: '.github/instructions',
         steeringPattern: '*.instructions.md',
@@ -121,6 +131,8 @@ export const PROVIDER_PATHS: Record<AIProviderType, ProviderPaths> = {
         supportsHooks: false,
     },
     'cursor-agent': {
+        canonicalSteeringFile: '.speckit/STEERING.md',
+        canonicalSteeringDir: '.speckit/steering',
         steeringFile: 'CLAUDE.md',
         steeringDir: '.claude/steering',
         steeringPattern: '*.md',

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 
 // AI Providers
 import { IAIProvider, AIProviderFactory } from './ai-providers';
+import { getConfiguredProviderType } from './ai-providers/aiProvider';
 
 // Features
 import { SteeringManager, SteeringExplorerProvider, registerSteeringCommands } from './features/steering';
@@ -21,10 +22,10 @@ import { SpecKitDetector, UpdateChecker, registerCliCommands, registerUtilityCom
 import { Views, setupFileWatchers, setupTasksWatcher } from './core';
 
 let aiProvider: IAIProvider;
-let permissionManager: PermissionManager;
+let permissionManager: PermissionManager | undefined;
 export let outputChannel: vscode.OutputChannel;
 
-export function getPermissionManager(): PermissionManager {
+export function getPermissionManager(): PermissionManager | undefined {
     return permissionManager;
 }
 
@@ -66,13 +67,26 @@ export async function activate(context: vscode.ExtensionContext) {
     aiProvider = AIProviderFactory.getProvider(context, outputChannel);
     outputChannel.appendLine(`[Extension] Using AI provider: ${aiProvider.name}`);
 
-    permissionManager = new PermissionManager(context, outputChannel);
-    await permissionManager.initializePermissions();
+    // Claude permission system should only be initialized when Claude is the selected provider.
+    // Specs are provider-agnostic artifacts and the extension must remain functional without Claude installed.
+    const providerType = getConfiguredProviderType();
+    if (providerType === 'claude') {
+        permissionManager = new PermissionManager(context, outputChannel);
+        await permissionManager.initializePermissions();
+    } else {
+        outputChannel.appendLine(`[Extension] Skipping Claude permission initialization (provider=${providerType})`);
+    }
 
     const steeringManager = new SteeringManager(outputChannel);
 
+    // Agent bootstrap currently writes Claude-specific assets under `.claude/`.
+    // Avoid creating provider-specific directories when Claude is not selected.
     const agentManager = new AgentManager(context, outputChannel);
-    await agentManager.initializeBuiltInAgents();
+    if (providerType === 'claude') {
+        await agentManager.initializeBuiltInAgents();
+    } else {
+        outputChannel.appendLine(`[Extension] Skipping built-in agent bootstrap (provider=${providerType})`);
+    }
 
     const skillManager = new SkillManager(context, outputChannel);
 
@@ -193,7 +207,5 @@ async function showConstitutionSetupSuggestion(): Promise<void> {
 }
 
 export function deactivate() {
-    if (permissionManager) {
-        permissionManager.dispose();
-    }
+    permissionManager?.dispose();
 }

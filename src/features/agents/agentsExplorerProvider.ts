@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { AgentManager, AgentInfo } from './agentManager';
 import { getConfiguredProviderType, getProviderPaths } from '../../ai-providers/aiProvider';
+import { shouldShowFeature } from '../../core/utils/capabilityPolicy';
 
 export class AgentsExplorerProvider implements vscode.TreeDataProvider<AgentItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<AgentItem | undefined | null | void> = new vscode.EventEmitter<AgentItem | undefined | null | void>();
@@ -42,13 +43,17 @@ export class AgentsExplorerProvider implements vscode.TreeDataProvider<AgentItem
         const providerType = getConfiguredProviderType();
         const providerPaths = getProviderPaths(providerType);
 
-        // Gemini has limited agent support
-        if (providerType === 'gemini' && !element) {
-            return [new AgentItem(
-                'Agents not supported for Gemini CLI',
-                vscode.TreeItemCollapsibleState.None,
-                'agent-not-supported'
-            )];
+        // Check capability policy for agents feature
+        if (!element) {
+            const visibility = await shouldShowFeature('agents', 'list_agents');
+            if (!visibility.show) {
+                // Show single informational affordance
+                return [new AgentItem(
+                    visibility.whyNot || 'Agents are not supported by the current provider.',
+                    vscode.TreeItemCollapsibleState.None,
+                    'agent-not-supported'
+                )];
+            }
         }
 
         if (!element) {

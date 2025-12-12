@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SteeringManager } from './steeringManager';
 import { SteeringExplorerProvider } from './steeringExplorerProvider';
 import { AgentsExplorerProvider } from '../agents/agentsExplorerProvider';
+import { getConfiguredProviderType } from '../../ai-providers/aiProvider';
 
 /**
  * Register steering-related commands
@@ -32,10 +33,24 @@ export function registerSteeringCommands(
         }),
 
         vscode.commands.registerCommand('speckit.steering.createUserRule', async () => {
+            const providerType = getConfiguredProviderType();
+            if (providerType !== 'claude') {
+                vscode.window.showErrorMessage(
+                    `This action is only supported when the AI provider is set to Claude (current: ${providerType}).`
+                );
+                return;
+            }
             await steeringManager.createUserClaudeMd();
         }),
 
         vscode.commands.registerCommand('speckit.steering.createProjectRule', async () => {
+            const providerType = getConfiguredProviderType();
+            if (providerType !== 'claude') {
+                vscode.window.showErrorMessage(
+                    `This action is only supported when the AI provider is set to Claude (current: ${providerType}).`
+                );
+                return;
+            }
             await steeringManager.createProjectClaudeMd();
         }),
 

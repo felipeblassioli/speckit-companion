@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { getConfiguredProviderType } from '../../ai-providers/aiProvider';
+import { shouldShowFeature } from '../../core/utils/capabilityPolicy';
 
 const execAsync = promisify(exec);
 
@@ -33,10 +34,24 @@ export class MCPExplorerProvider implements vscode.TreeDataProvider<MCPItem> {
         outputChannel: vscode.OutputChannel
     ) {
         this.outputChannel = outputChannel;
-        this.loadMCPServers();
+        // Only Claude provider uses `claude mcp ...` commands. Other providers show informational items.
+        const providerType = getConfiguredProviderType();
+        if (providerType === 'claude') {
+            this.loadMCPServers();
+        } else {
+            this.isLoading = false;
+        }
     }
 
     refresh(): void {
+        const providerType = getConfiguredProviderType();
+        if (providerType !== 'claude') {
+            // Keep view responsive without invoking Claude CLI.
+            this.isLoading = false;
+            this._onDidChangeTreeData.fire();
+            return;
+        }
+
         this.isLoading = true;
         this._onDidChangeTreeData.fire(); // Fire immediately to show loading state
         this.loadMCPServers();
@@ -51,25 +66,15 @@ export class MCPExplorerProvider implements vscode.TreeDataProvider<MCPItem> {
             // Root level - show all MCP servers
             const items: MCPItem[] = [];
 
-            // For non-Claude providers, show info message about MCP config location
-            const providerType = getConfiguredProviderType();
-            if (providerType !== 'claude') {
-                const configPath = providerType === 'gemini'
-                    ? '~/.gemini/settings.json'
-                    : '~/.copilot/mcp-config.json';
+            // Check capability policy for MCP feature
+            const visibility = await shouldShowFeature('mcp', 'list_mcp_servers');
+            if (!visibility.show) {
+                // Show single informational affordance
                 items.push(new MCPItem(
-                    `MCP config: ${configPath}`,
+                    visibility.whyNot || 'MCP servers are not supported by the current provider.',
                     vscode.TreeItemCollapsibleState.None,
                     'mcp-info',
-                    'mcp-config-info',
-                    undefined,
-                    this.context
-                ));
-                items.push(new MCPItem(
-                    'Use CLI to manage MCP servers',
-                    vscode.TreeItemCollapsibleState.None,
-                    'mcp-info',
-                    'mcp-cli-info',
+                    'mcp-not-supported',
                     undefined,
                     this.context
                 ));

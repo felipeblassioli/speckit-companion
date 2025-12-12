@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { getConfiguredProviderType } from '../../ai-providers/aiProvider';
+import { shouldShowFeature } from '../../core/utils/capabilityPolicy';
 
 export class HooksExplorerProvider implements vscode.TreeDataProvider<HookItem> {
     private _onDidChangeTreeData: vscode.EventEmitter<HookItem | undefined | null | void> = new vscode.EventEmitter<HookItem | undefined | null | void>();
@@ -40,19 +40,22 @@ export class HooksExplorerProvider implements vscode.TreeDataProvider<HookItem> 
             return [];
         }
 
-        // Hooks are only supported for Claude Code
-        const providerType = getConfiguredProviderType();
-        if (providerType !== 'claude' && !element) {
-            return [
-                new HookItem(
-                    `Hooks not supported for ${providerType === 'gemini' ? 'Gemini CLI' : 'GitHub Copilot CLI'}`,
-                    vscode.TreeItemCollapsibleState.None,
-                    'hooks-not-supported',
-                    'not-supported',
-                    undefined,
-                    this.context
-                )
-            ];
+        // Check capability policy for hooks feature
+        if (!element) {
+            const visibility = await shouldShowFeature('hooks', 'list_hooks');
+            if (!visibility.show) {
+                // Show single informational affordance
+                return [
+                    new HookItem(
+                        visibility.whyNot || 'Hooks are not supported by the current provider.',
+                        vscode.TreeItemCollapsibleState.None,
+                        'hooks-not-supported',
+                        'not-supported',
+                        undefined,
+                        this.context
+                    )
+                ];
+            }
         }
 
         if (!element) {
@@ -166,37 +169,45 @@ export class HooksExplorerProvider implements vscode.TreeDataProvider<HookItem> 
     private async getClaudeCodeHooks(): Promise<{name: string, enabled: boolean, config: any, configPath: string}[]> {
         const hooks: {name: string, enabled: boolean, config: any, configPath: string}[] = [];
         
-        // Check workspace .claude/settings.json first
+        // Check workspace .claude/settings.json first (remote-safe I/O)
         if (vscode.workspace.workspaceFolders) {
-            const workspaceConfigPath = path.join(
-                vscode.workspace.workspaceFolders[0].uri.fsPath,
+            const workspaceConfigUri = vscode.Uri.joinPath(
+                vscode.workspace.workspaceFolders[0].uri,
                 '.claude',
                 'settings.json'
             );
-            if (fs.existsSync(workspaceConfigPath)) {
-                try {
-                    const config = JSON.parse(fs.readFileSync(workspaceConfigPath, 'utf8'));
-                    if (config.hooks) {
-                        Object.entries(config.hooks).forEach(([name, value]) => {
-                            hooks.push({
-                                name,
-                                enabled: true,
-                                config: value,
-                                configPath: workspaceConfigPath
-                            });
+            try {
+                await vscode.workspace.fs.stat(workspaceConfigUri);
+                // File exists, read it
+                const fileContent = await vscode.workspace.fs.readFile(workspaceConfigUri);
+                const config = JSON.parse(Buffer.from(fileContent).toString('utf8'));
+                if (config.hooks) {
+                    Object.entries(config.hooks).forEach(([name, value]) => {
+                        hooks.push({
+                            name,
+                            enabled: true,
+                            config: value,
+                            configPath: workspaceConfigUri.fsPath
                         });
-                    }
-                } catch (error) {
-                    console.error('Failed to read workspace Claude Code hooks:', error);
+                    });
                 }
+            } catch (error) {
+                // File doesn't exist or read failed - ignore silently
+                // (This is expected if workspace config doesn't exist)
             }
         }
         
-        // Then check global ~/.claude/settings.json
+        // Then check global ~/.claude/settings.json (home directory - still use fs for now)
+        // Note: Home directory access is not workspace-related, so Node fs is acceptable here
+        // but we could convert to vscode.workspace.fs for consistency if needed
         try {
             const claudeConfigPath = path.join(process.env.HOME || '', '.claude', 'settings.json');
-            if (fs.existsSync(claudeConfigPath)) {
-                const config = JSON.parse(fs.readFileSync(claudeConfigPath, 'utf8'));
+            const claudeConfigUri = vscode.Uri.file(claudeConfigPath);
+            try {
+                await vscode.workspace.fs.stat(claudeConfigUri);
+                // File exists, read it
+                const fileContent = await vscode.workspace.fs.readFile(claudeConfigUri);
+                const config = JSON.parse(Buffer.from(fileContent).toString('utf8'));
                 if (config.hooks) {
                     Object.entries(config.hooks).forEach(([name, value]) => {
                         // Only add if not already added from workspace
@@ -210,9 +221,11 @@ export class HooksExplorerProvider implements vscode.TreeDataProvider<HookItem> 
                         }
                     });
                 }
+            } catch (error) {
+                // File doesn't exist or read failed - ignore silently
             }
         } catch (error) {
-            console.error('Failed to read global Claude Code hooks:', error);
+            // Ignore errors reading global config
         }
         return hooks;
     }

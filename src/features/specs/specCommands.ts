@@ -5,6 +5,9 @@ import { SpecExplorerProvider } from './specExplorerProvider';
 import { SpecKitDetector } from '../../speckit/detector';
 import { NotificationUtils } from '../../core/utils/notificationUtils';
 import { sanitizeShellInput } from '../../core/utils/sanitize';
+import { getConfiguredProviderType } from '../../ai-providers/aiProvider';
+import { guardOrShowError } from '../../core/utils/capabilityGuard';
+import type { ActionId } from '../../ai-providers/providerCapabilities';
 
 /**
  * Register SpecKit workflow commands (create, specify, plan, tasks, etc.)
@@ -52,7 +55,18 @@ export function registerSpecKitCommands(
             NotificationUtils.showAutoDismissNotification('Creating spec with SpecKit. Check the terminal for progress.');
 
             const command = `/speckit.specify ${sanitizedDescription}`;
-            await getAIProvider().executeSlashCommand(command, 'SpecKit - Creating Spec');
+            const provider = getAIProvider();
+            const providerId = getConfiguredProviderType();
+            const allowed = await guardOrShowError({
+                providerId,
+                provider,
+                agent: 'workflow',
+                action: 'run_speckit_specify',
+            });
+            if (!allowed) {
+                return;
+            }
+            await provider.executeSlashCommand(command, 'SpecKit - Creating Spec');
         })
     );
 
@@ -124,7 +138,37 @@ function registerPhaseCommands(
                 }
 
                 const command = `/speckit.${cmd.name} ${targetDir}`;
-                await getAIProvider().executeSlashCommand(command, `SpecKit - ${cmd.title}`);
+                const provider = getAIProvider();
+                const providerId = getConfiguredProviderType();
+
+                const actionMap: Record<string, ActionId> = {
+                    specify: 'run_speckit_specify',
+                    plan: 'run_speckit_plan',
+                    tasks: 'run_speckit_tasks',
+                    implement: 'run_speckit_implement',
+                    clarify: 'run_speckit_clarify',
+                    analyze: 'run_speckit_analyze',
+                    checklist: 'run_speckit_checklist',
+                };
+
+                const action = actionMap[cmd.name];
+                if (!action) {
+                    vscode.window.showErrorMessage(
+                        `Unknown SpecKit workflow action "${cmd.name}". Please report this as a bug.`
+                    );
+                    return;
+                }
+                const allowed = await guardOrShowError({
+                    providerId,
+                    provider,
+                    agent: 'workflow',
+                    action,
+                });
+                if (!allowed) {
+                    return;
+                }
+
+                await provider.executeSlashCommand(command, `SpecKit - ${cmd.title}`);
             })
         );
     }
@@ -135,7 +179,18 @@ function registerPhaseCommands(
             outputChannel.appendLine(`[SpecKit] Constitution command triggered`);
 
             const command = `/speckit.constitution`;
-            await getAIProvider().executeSlashCommand(command, 'SpecKit - Constitution');
+            const provider = getAIProvider();
+            const providerId = getConfiguredProviderType();
+            const allowed = await guardOrShowError({
+                providerId,
+                provider,
+                agent: 'workflow',
+                action: 'run_speckit_constitution',
+            });
+            if (!allowed) {
+                return;
+            }
+            await provider.executeSlashCommand(command, 'SpecKit - Constitution');
         })
     );
 }

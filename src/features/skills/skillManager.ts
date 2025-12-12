@@ -73,12 +73,20 @@ export class SkillManager {
         try {
             this.outputChannel.appendLine(`[SkillManager] Reading skills from directory: ${dirPath}`);
 
-            if (!fs.existsSync(dirPath)) {
+            const dirUri = vscode.Uri.file(dirPath);
+            // Check if directory exists (remote-safe)
+            try {
+                const stat = await vscode.workspace.fs.stat(dirUri);
+                if (stat.type !== vscode.FileType.Directory) {
+                    this.outputChannel.appendLine(`[SkillManager] Skills path is not a directory: ${dirPath}`);
+                    return skills;
+                }
+            } catch {
                 this.outputChannel.appendLine(`[SkillManager] Skills directory does not exist: ${dirPath}`);
                 return skills;
             }
 
-            const entries = await vscode.workspace.fs.readDirectory(vscode.Uri.file(dirPath));
+            const entries = await vscode.workspace.fs.readDirectory(dirUri);
 
             for (const [folderName, fileType] of entries) {
                 // Skills are in subdirectories
@@ -87,9 +95,12 @@ export class SkillManager {
                 }
 
                 const skillMdPath = path.join(dirPath, folderName, 'SKILL.md');
+                const skillMdUri = vscode.Uri.file(skillMdPath);
 
-                // Check if SKILL.md exists in the folder
-                if (!fs.existsSync(skillMdPath)) {
+                // Check if SKILL.md exists in the folder (remote-safe)
+                try {
+                    await vscode.workspace.fs.stat(skillMdUri);
+                } catch {
                     this.outputChannel.appendLine(`[SkillManager] Skipping folder without SKILL.md: ${folderName}`);
                     continue;
                 }
@@ -115,15 +126,20 @@ export class SkillManager {
     async getPluginSkills(): Promise<SkillInfo[]> {
         const skills: SkillInfo[] = [];
         const installedPluginsPath = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
+        const installedPluginsUri = vscode.Uri.file(installedPluginsPath);
 
         try {
-            if (!fs.existsSync(installedPluginsPath)) {
+            // Check if file exists (remote-safe)
+            try {
+                await vscode.workspace.fs.stat(installedPluginsUri);
+            } catch {
                 this.outputChannel.appendLine('[SkillManager] No installed_plugins.json found, skipping plugin skills');
                 return skills;
             }
 
-            const installedPluginsContent = await fs.promises.readFile(installedPluginsPath, 'utf-8');
-            const installedPlugins = JSON.parse(installedPluginsContent);
+            // Read file (remote-safe)
+            const installedPluginsContent = await vscode.workspace.fs.readFile(installedPluginsUri);
+            const installedPlugins = JSON.parse(Buffer.from(installedPluginsContent).toString('utf-8'));
 
             if (!installedPlugins.plugins) {
                 this.outputChannel.appendLine('[SkillManager] No plugins found in installed_plugins.json');
@@ -138,8 +154,16 @@ export class SkillManager {
                 }
 
                 const skillsDir = path.join(pluginData.installPath, 'skills');
+                const skillsDirUri = vscode.Uri.file(skillsDir);
 
-                if (!fs.existsSync(skillsDir)) {
+                // Check if directory exists (remote-safe)
+                try {
+                    const stat = await vscode.workspace.fs.stat(skillsDirUri);
+                    if (stat.type !== vscode.FileType.Directory) {
+                        this.outputChannel.appendLine(`[SkillManager] Plugin ${pluginKey} skills path is not a directory`);
+                        continue;
+                    }
+                } catch {
                     this.outputChannel.appendLine(`[SkillManager] Plugin ${pluginKey} has no skills directory`);
                     continue;
                 }
@@ -157,8 +181,12 @@ export class SkillManager {
                     }
 
                     const skillMdPath = path.join(skillsDir, folderName, 'SKILL.md');
+                    const skillMdUri = vscode.Uri.file(skillMdPath);
 
-                    if (!fs.existsSync(skillMdPath)) {
+                    // Check if SKILL.md exists (remote-safe)
+                    try {
+                        await vscode.workspace.fs.stat(skillMdUri);
+                    } catch {
                         continue;
                     }
 
@@ -188,7 +216,10 @@ export class SkillManager {
     async parseSkillFile(filePath: string, type: SkillType, folderName: string): Promise<SkillInfo | null> {
         try {
             this.outputChannel.appendLine(`[SkillManager] Parsing skill file: ${filePath}`);
-            const content = await fs.promises.readFile(filePath, 'utf8');
+            // Use vscode.workspace.fs for remote-safe I/O
+            const fileUri = vscode.Uri.file(filePath);
+            const fileContent = await vscode.workspace.fs.readFile(fileUri);
+            const content = Buffer.from(fileContent).toString('utf8');
 
             // Extract YAML frontmatter
             const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);

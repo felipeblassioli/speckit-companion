@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { SpecExplorerProvider } from '../features/specs/specExplorerProvider';
 import { SteeringExplorerProvider } from '../features/steering/steeringExplorerProvider';
 import { HooksExplorerProvider } from '../features/hooks/hooksExplorerProvider';
@@ -11,6 +12,7 @@ import {
     initializeCache,
 } from '../speckit/taskProgressService';
 import { NotificationUtils } from './utils/notificationUtils';
+import { getConfiguredProviderType, getProviderPaths } from '../ai-providers/aiProvider';
 
 /**
  * Set up file watchers for the extension
@@ -24,18 +26,66 @@ export function setupFileWatchers(
     agentsExplorer: AgentsExplorerProvider,
     outputChannel: vscode.OutputChannel
 ): void {
-    // Watch for changes in .claude directory with debouncing
-    setupClaudeDirectoryWatcher(context, specExplorer, steeringExplorer, hooksExplorer, mcpExplorer, agentsExplorer, outputChannel);
+    // Watch canonical .speckit directory (provider-agnostic)
+    setupCanonicalDirectoryWatcher(context, specExplorer, steeringExplorer, hooksExplorer, mcpExplorer, agentsExplorer, outputChannel);
 
-    // Watch for changes in Claude settings
-    setupClaudeSettingsWatcher(context, hooksExplorer, mcpExplorer);
+    // Watch provider-specific directories (only if provider uses them)
+    const providerType = getConfiguredProviderType();
+    const providerPaths = getProviderPaths(providerType);
 
-    // Watch for changes in CLAUDE.md files
-    setupClaudeMdWatchers(context, steeringExplorer);
+    // Watch legacy .claude directory only if provider uses it
+    if (providerPaths.steeringDir.includes('.claude') || providerPaths.agentsDir.includes('.claude')) {
+        setupClaudeDirectoryWatcher(context, specExplorer, steeringExplorer, hooksExplorer, mcpExplorer, agentsExplorer, outputChannel);
+    }
+
+    // Watch for changes in Claude settings (only if hooks are supported)
+    if (providerPaths.supportsHooks) {
+        setupClaudeSettingsWatcher(context, hooksExplorer, mcpExplorer);
+    }
+
+    // Watch for changes in steering files (canonical + legacy)
+    setupSteeringWatchers(context, steeringExplorer, providerPaths);
 }
 
 /**
- * Watch .claude directory with debouncing
+ * Watch canonical .speckit directory (provider-agnostic)
+ */
+function setupCanonicalDirectoryWatcher(
+    context: vscode.ExtensionContext,
+    specExplorer: SpecExplorerProvider,
+    steeringExplorer: SteeringExplorerProvider,
+    hooksExplorer: HooksExplorerProvider,
+    mcpExplorer: MCPExplorerProvider,
+    agentsExplorer: AgentsExplorerProvider,
+    outputChannel: vscode.OutputChannel
+): void {
+    const speckitWatcher = vscode.workspace.createFileSystemWatcher('**/.speckit/**/*');
+
+    let refreshTimeout: NodeJS.Timeout | undefined;
+    const debouncedRefresh = (event: string, uri: vscode.Uri) => {
+        outputChannel.appendLine(`[FileWatcher] ${event}: ${uri.fsPath}`);
+
+        if (refreshTimeout) {
+            clearTimeout(refreshTimeout);
+        }
+        refreshTimeout = setTimeout(() => {
+            specExplorer.refresh();
+            steeringExplorer.refresh();
+            hooksExplorer.refresh();
+            mcpExplorer.refresh();
+            agentsExplorer.refresh();
+        }, 1000);
+    };
+
+    speckitWatcher.onDidCreate((uri) => debouncedRefresh('Create', uri));
+    speckitWatcher.onDidDelete((uri) => debouncedRefresh('Delete', uri));
+    speckitWatcher.onDidChange((uri) => debouncedRefresh('Change', uri));
+
+    context.subscriptions.push(speckitWatcher);
+}
+
+/**
+ * Watch .claude directory with debouncing (legacy, provider-specific)
  */
 function setupClaudeDirectoryWatcher(
     context: vscode.ExtensionContext,
@@ -92,23 +142,52 @@ function setupClaudeSettingsWatcher(
 }
 
 /**
- * Watch CLAUDE.md files (global and project)
+ * Watch steering files (canonical + legacy provider-specific)
  */
-function setupClaudeMdWatchers(
+function setupSteeringWatchers(
     context: vscode.ExtensionContext,
-    steeringExplorer: SteeringExplorerProvider
+    steeringExplorer: SteeringExplorerProvider,
+    providerPaths: ReturnType<typeof getProviderPaths>
 ): void {
-    const globalClaudeMdWatcher = vscode.workspace.createFileSystemWatcher(
-        new vscode.RelativePattern(process.env.HOME || '', '.claude/CLAUDE.md')
-    );
-    const projectClaudeMdWatcher = vscode.workspace.createFileSystemWatcher('**/CLAUDE.md');
+    // Watch canonical steering file
+    const canonicalSteeringWatcher = vscode.workspace.createFileSystemWatcher('**/.speckit/STEERING.md');
+    canonicalSteeringWatcher.onDidCreate(() => steeringExplorer.refresh());
+    canonicalSteeringWatcher.onDidDelete(() => steeringExplorer.refresh());
+    canonicalSteeringWatcher.onDidChange(() => steeringExplorer.refresh());
+    context.subscriptions.push(canonicalSteeringWatcher);
 
-    globalClaudeMdWatcher.onDidCreate(() => steeringExplorer.refresh());
-    globalClaudeMdWatcher.onDidDelete(() => steeringExplorer.refresh());
-    projectClaudeMdWatcher.onDidCreate(() => steeringExplorer.refresh());
-    projectClaudeMdWatcher.onDidDelete(() => steeringExplorer.refresh());
+    // Watch canonical steering directory
+    const canonicalSteeringDirWatcher = vscode.workspace.createFileSystemWatcher('**/.speckit/steering/**/*');
+    canonicalSteeringDirWatcher.onDidCreate(() => steeringExplorer.refresh());
+    canonicalSteeringDirWatcher.onDidDelete(() => steeringExplorer.refresh());
+    canonicalSteeringDirWatcher.onDidChange(() => steeringExplorer.refresh());
+    context.subscriptions.push(canonicalSteeringDirWatcher);
 
-    context.subscriptions.push(globalClaudeMdWatcher, projectClaudeMdWatcher);
+    // Watch legacy provider-specific steering files (for backward compatibility)
+    if (providerPaths.steeringFile) {
+        // Watch project-level legacy file
+        const legacyProjectWatcher = vscode.workspace.createFileSystemWatcher(`**/${providerPaths.steeringFile}`);
+        legacyProjectWatcher.onDidCreate(() => steeringExplorer.refresh());
+        legacyProjectWatcher.onDidDelete(() => steeringExplorer.refresh());
+        legacyProjectWatcher.onDidChange(() => steeringExplorer.refresh());
+        context.subscriptions.push(legacyProjectWatcher);
+
+        // Watch global legacy file (if applicable)
+        if (providerPaths.steeringFile !== '.github/copilot-instructions.md') {
+            // Most providers have a global steering file in home directory
+            const home = process.env.HOME || '';
+            const globalPath = providerPaths.steeringFile.startsWith('.')
+                ? path.join(home, providerPaths.steeringFile.replace(/^\./, ''))
+                : path.join(home, '.claude', providerPaths.steeringFile);
+            const legacyGlobalWatcher = vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(home, providerPaths.steeringFile)
+            );
+            legacyGlobalWatcher.onDidCreate(() => steeringExplorer.refresh());
+            legacyGlobalWatcher.onDidDelete(() => steeringExplorer.refresh());
+            legacyGlobalWatcher.onDidChange(() => steeringExplorer.refresh());
+            context.subscriptions.push(legacyGlobalWatcher);
+        }
+    }
 }
 
 /**

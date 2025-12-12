@@ -1,12 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import type { SpecInfo, RelatedDoc, EnhancementButton } from '../../../core/types';
 
 /**
  * Parse spec information from a document
  */
-export function parseSpecInfo(document: vscode.TextDocument): SpecInfo {
+export async function parseSpecInfo(document: vscode.TextDocument): Promise<SpecInfo> {
     const fileName = path.basename(document.fileName);
     const dirPath = path.dirname(document.fileName);
 
@@ -56,12 +55,21 @@ export function parseSpecInfo(document: vscode.TextDocument): SpecInfo {
         documentType = 'plan';  // Treat as plan-related
     }
 
-    // Check if next phase file exists
+    // Check if next phase file exists (remote-safe I/O)
     const nextFileName = currentPhase === 1 ? 'plan.md' : currentPhase === 2 ? 'tasks.md' : null;
-    const nextPhaseExists = nextFileName ? fs.existsSync(path.join(dirPath, nextFileName)) : false;
+    let nextPhaseExists = false;
+    if (nextFileName) {
+        const nextFileUri = vscode.Uri.file(path.join(dirPath, nextFileName));
+        try {
+            await vscode.workspace.fs.stat(nextFileUri);
+            nextPhaseExists = true;
+        } catch {
+            nextPhaseExists = false;
+        }
+    }
 
     // Find ALL documents in same folder for tabs (consistent order)
-    const allDocs = getRelatedDocs(dirPath, fileName, documentType);
+    const allDocs = await getRelatedDocs(dirPath, fileName, documentType);
 
     return {
         currentPhase,
@@ -79,11 +87,13 @@ export function parseSpecInfo(document: vscode.TextDocument): SpecInfo {
 /**
  * Get related documents for tab display
  */
-function getRelatedDocs(dirPath: string, currentFileName: string, documentType: string): RelatedDoc[] {
+async function getRelatedDocs(dirPath: string, currentFileName: string, documentType: string): Promise<RelatedDoc[]> {
     const mainDocs = ['spec.md', 'plan.md', 'tasks.md'];
 
     try {
-        const files = fs.readdirSync(dirPath);
+        const dirUri = vscode.Uri.file(dirPath);
+        const entries = await vscode.workspace.fs.readDirectory(dirUri);
+        const files = entries.map(([name]) => name);
         // Get non-main docs
         const otherDocs = files.filter(f => f.endsWith('.md') && !mainDocs.includes(f));
 
@@ -95,13 +105,18 @@ function getRelatedDocs(dirPath: string, currentFileName: string, documentType: 
             // Collect all docs that exist
             const docsToShow: RelatedDoc[] = [];
 
-            // Add plan.md if it exists
-            if (fs.existsSync(path.join(dirPath, 'plan.md'))) {
+            // Add plan.md if it exists (remote-safe I/O)
+            const planPath = path.join(dirPath, 'plan.md');
+            const planUri = vscode.Uri.file(planPath);
+            try {
+                await vscode.workspace.fs.stat(planUri);
                 docsToShow.push({
                     name: 'Plan',
                     fileName: 'plan.md',
-                    path: path.join(dirPath, 'plan.md')
+                    path: planPath
                 });
+            } catch {
+                // plan.md doesn't exist
             }
 
             // Add other docs
