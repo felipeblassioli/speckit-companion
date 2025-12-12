@@ -1,0 +1,89 @@
+---
+title: SpecKit Companion — Extension Architecture
+description: Conventions for layering, commands, providers, watchers, webview messaging, and CLI integration in the SpecKit Companion VS Code extension.
+glob: "{src,webview-src}/**/*.{ts,tsx}"
+alwaysApply: false
+---
+
+@file ../../../ARCHITECTURE.md
+
+# SpecKit Companion — Extension Architecture
+
+## What this rule enforces
+
+This repository is a VS Code extension that provides spec-driven development UX and integrates with AI CLIs. Keep a strict separation between:
+- **Commands** (UI entry points)
+- **Providers** (VS Code views/editors)
+- **Services/Managers** (business logic + filesystem)
+- **Webview** (sandboxed UI with typed message bridge) 
+
+## Directory + responsibility boundaries
+
+Use the repository’s existing layout as the source of truth:
+
+- `src/extension.ts`: activation + wiring (register commands, instantiate providers, start watchers).
+- `src/commands/`: command handlers (thin orchestration).
+- `src/providers/`: TreeDataProviders and workflow editor provider(s).
+- `src/watchers/`: filesystem watchers (not business logic).
+- `src/services/`: pure services (prompt loading, etc.).
+- `src/features/<feature>/`: feature modules (permission caching, etc.).
+- `src/shared/types/`: shared message / contract types.
+- `webview-src/`: webview TypeScript (rendering, parsing, UI components).
+- `webview/`: compiled assets.
+
+## Command naming + registration
+
+There is a known namespace mismatch between docs:
+- Some guidance references `kfc.{feature}.{action}`.
+- `package.json` command IDs are `speckit.*` (and these map to slash commands and extension commands).
+
+Policy:
+- **Prefer `speckit.<feature>.<action>` for any new command IDs.**
+- If the repo still contains `kfc.*` IDs, keep them as **aliases** only when needed for backward compatibility.
+
+Implementation requirements:
+- Add command IDs to `package.json` under `contributes.commands` and (if relevant) `contributes.menus`.
+- Register handlers during activation (typically in `activate()`).
+
+## Providers (TreeDataProvider + custom editors)
+
+Providers must be **UI-only adapters**:
+- No direct “business decisions”.
+- Delegate filesystem and workflow semantics to services/managers.
+- After any mutation that affects a tree view, call `refresh()` on the relevant provider(s).
+
+## Watchers
+
+- Watchers monitor `.claude/` (and any other configured workspace folders) and trigger refreshes.
+- Use debouncing to avoid refresh storms (existing behavior: ~1 second).
+
+## File operations + error handling
+
+Hard requirements:
+- Always use `vscode.Uri` and workspace-relative paths (never raw string paths).
+- Wrap filesystem operations in `try/catch`.
+- Report errors via VS Code notifications (`vscode.window.showErrorMessage`) with actionable context.
+
+## Webview messaging contract (Workflow Editor)
+
+The workflow editor is a webview custom editor:
+- Extension host -> webview: `documentChanged`, `updatePhaseInfo` (and any other typed messages)
+- Webview -> extension host: `editSource`, `removeLine`, `refineLine`, `generateContent`
+
+Rules:
+- Message payloads must be **typed** (use the shared message union types).
+- The extension host is the source of truth for document content; webview renders and requests actions.
+- Action handling belongs in the workflow `actionHandlers` layer; it may invoke AI CLI integration, then apply edits to the document, which naturally triggers re-render through `documentChanged`.
+
+## AI CLI integration (Claude Code / SpecKit CLI)
+
+- Prefer “prompt file redirection” patterns for long prompts (avoid shell-escaping huge inline strings).
+- Detect required CLIs (e.g., `specify`) before presenting actions that depend on them.
+- Any command execution should be funneled through the existing provider/service (e.g., ClaudeCodeProvider), not scattered across unrelated modules.
+
+## Anti-patterns to avoid
+
+- Providers calling `fs` directly for anything beyond trivial reads.
+- Webview applying edits without going through the extension host.
+- Un-typed `postMessage` payloads (“stringly typed” messages).
+- Running shell commands by concatenating user input (shell injection risk); use temp files + safe quoting.

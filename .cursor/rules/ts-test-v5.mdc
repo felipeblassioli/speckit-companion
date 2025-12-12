@@ -1,0 +1,161 @@
+---
+title: TypeScript core rules for testing
+alwaysApply: false
+---
+
+# TS Testing Rules — unit • integration
+
+## Layout & naming
+
+- Keep unit tests **beside** the file under test:
+  - `damage-prediction.service.ts`
+  - `damage-prediction.service.test.ts`
+- Prefer `*.test.ts[x]` for consistency.
+
+## Unit tests (default)
+
+- **Behavior-first**: assert observable results & published effects; avoid coupling to internal calls/implementation.
+- **AAA**: Arrange, Act, Assert. One behavior per case. Fail messages must be obvious.
+- **Names**: descriptive test titles and variable names; use full words.
+- **Data relevance**: include only fields that matter to the case; everything else omitted or defaulted via tiny builders.
+- **Generators**: small deterministic factories are okay (no unseeded randomness).
+- **Doubles policy**: prefer **stubs**, use **fakes** for light in‑memory state/logic, **spies** only if needed, **mocks** rarely. Build doubles at edges; do not assert inside doubles.
+- **Determinism**: freeze time/UUID; isolate I/O; no live network; **no open handles** (enable `--detectOpenHandles` locally and fix causes).
+
+## Testing (behavior + types)
+
+- Assert **behavior and types** (exhaustiveness, DTO exactness, error codes).
+- Prefer **black‑box** tests; builders/factories for setup.
+- Cover happy, degraded, error paths; avoid brittle internal mocks.
+- **Type‑level** tests (`expectTypeOf`, `tsd`) for utilities/public types.
+- **Property‑based** tests (`fast-check`) at boundaries (parsers, normalization, pagination).
+
+## Integration tests
+
+- **Controllers = integration**: route + validation + serialization; assert transport contract (status, headers, body) and side effects.
+- **Repositories = integration**: run against a test DB with fixtures; assert queries produce expected rows. Aim for smoke coverage with meaningful datasets and proper teardown.
+- **Location**: mirror the source tree under either:
+  - `test-integration/<mirror>/.../*.controller.int.test.ts` / `*.repository.int.test.ts`
+  - or `test/integration/<mirror>/.../*.controller.int.test.ts` / `*.repository.int.test.ts`
+
+## Stubs/Fakes/Spies/Mocks — quick guide
+
+- **Stub**: canned response; no call assertions.
+- **Fake**: lightweight working impl with minimal state/logic; verify via outputs/DB.
+- **Spy**: records calls for later assertions.
+- **Mock**: pre‑programmed expectations; avoid unless behavior‑verification is essential.
+
+## Jest hoisting & mocking (ESM/CJS) — deterministic rules
+
+> Applies to both CommonJS and ESM (NodeNext / `"type":"module"`), including class instance cases like `new SlackProvider()`.
+
+### Core principles
+
+1. **Mock before import**: define all module mocks **before** importing the module under test (MUT) — the module registry is snapshotted at import time.
+2. **Prefer DI over constructor interception**: expose a factory/constructor seam so tests pass a fake (`makeService(() => fakeSlack)`). Intercepting `new` is a last resort.
+3. **Path exactness**: import path must match **exactly** (no alias drift). One import path → one mock.
+4. **Per‑test isolation**: when import‑time state matters, use `jest.resetModules()` (CJS) or `jest.isolateModulesAsync()` (ESM) and re‑import inside the test.
+
+### CommonJS pattern
+
+```ts
+// __tests__/service.cjs.test.ts
+jest.mock("../slack", () => ({
+  SlackProvider: jest.fn().mockImplementation(() => ({
+    send: jest.fn().mockResolvedValue(true),
+  })),
+}));
+
+const { SlackProvider } = require("../slack"); // mock in effect
+const { service } = require("../service"); // import after mock
+
+// If keeping the real class, mock instance methods via prototype
+jest.spyOn(SlackProvider.prototype, "send").mockResolvedValue(true);
+```
+
+### ESM pattern (NodeNext / `type: module`)
+
+```ts
+// __tests__/service.esm.test.ts
+await jest.unstable_mockModule("../slack.js", () => ({
+  default: class SlackProvider {
+    send = jest.fn().mockResolvedValue(true);
+  },
+  __esModule: true, // default/named interop
+}));
+
+const { default: SlackProvider } = await import("../slack.js");
+const { service } = await import("../service.js");
+
+// For variant graphs per test
+await jest.isolateModulesAsync(async () => {
+  await jest.unstable_mockModule("../slack.js", () => ({
+    /* ... */
+  }));
+  const { service } = await import("../service.js");
+  // ... assertions
+});
+```
+
+### Constructor interception (only if necessary)
+
+- **Best**: DI seam.
+- If intercepting `new`:
+  - Replace the exported class entirely with a fake class that returns jest-fns; or
+  - Keep the real class and **spy on the prototype** (e.g., `jest.spyOn(SlackProvider.prototype, 'send')`).
+  - Avoid half‑mocked classes that break `instanceof` or trigger side‑effects unexpectedly.
+
+### Setup files & environment
+
+- Do **not** place module mocks in `setupFilesAfterEnv`; app code may already be imported. Keep only globals/matchers/utilities there.
+- Use **modern fake timers** consistently for time‑based code; advance timers explicitly.
+- Ensure all async work is awaited; no dangling tasks or sockets (**no open handles**).
+
+### Interop & partial mocks
+
+- For ESM default exports, return `{ default: mock, __esModule: true }`.
+- For partial mocks, pull through real code:
+  - CJS: `const real = jest.requireActual('../slack');`
+  - ESM: `const real = await import('../slack.js');`
+  - Then spread: `return { ...real, something: mock }`.
+
+### TypeScript helpers
+
+- Use `jest.mocked()` for typed mocks (`{ shallow: true }` when replacing functions only).
+- Keep `ts-jest`/`babel-jest` and `moduleNameMapper` in sync with `tsconfig.paths` to avoid alias drift (mock path ≠ import path bugs).
+
+### MSW (v2) for external HTTP
+
+- Prefer **MSW v2** to simulate external APIs in unit/integration tests; initialize handlers per test file and reset in `afterEach`.
+- No real network calls; assert on request/response behavior.
+
+## Example (minimal)
+
+```ts
+// only admins can change user roles
+test("only admins can change user roles", async () => {
+  const user = { id: "any-user-id", role: "admin" } as const; // relevant fields only
+  const sut = makeService(/* deps */);
+  const ok = await sut.changeRole(user.id, "manager");
+  expect(ok).toBe(true);
+});
+```
+
+## File naming rules
+
+- **Unit**: co-located `*.test.ts[x]` next to source (e.g., `foo.ts` → `foo.test.ts`). When using BDD/behavior-focused specs, use `*.spec.ts[x]`.
+- **Controllers (integration)**: under `test-integration/<mirror>/.../` or `test/integration/<mirror>/.../` as `<name>.controller.int.test.ts` (use `.spec.ts` when BDD).
+- **Repositories (integration)**: same directories, `<name>.repository.int.test.ts` (or `.spec.ts` for BDD).
+- **Shared test data**: `<feature>.test-gen.ts` or `<feature>.fixtures.ts`.
+
+## Checklist (paste into PR)
+
+- [ ] Mocks defined **before** importing the SUT
+- [ ] ESM tests use `unstable_mockModule` + dynamic `import`
+- [ ] No reassignment of ESM imports; paths are exact
+- [ ] Prefer DI seam over constructor interception; prototype spies when keeping real class
+- [ ] `resetModules` / `isolateModulesAsync` applied when import-time state matters
+- [ ] `__esModule: true` set for default export mocks
+- [ ] `restoreAllMocks` + `clearAllMocks` in `afterEach`
+- [ ] Modern fake timers used; **no open handles**
+- [ ] External HTTP via **MSW v2** only (no live network)

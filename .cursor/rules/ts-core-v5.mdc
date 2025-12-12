@@ -1,0 +1,133 @@
+---
+description: TypeScript core rules for strict type-safety, safe runtime behavior, and minimal observable code
+alwaysApply: false
+---
+
+# TypeScript Core Rules — strict · safe · minimal · explicit
+
+> Opinionated baseline for predictable, correct, observable TypeScript in apps/libs. Keep formatting and prose minimal.
+
+## Scope & intent
+
+- **Single nullish**: Internal absence is `undefined`. Treat `null` as foreign; normalize at edges.
+- **No enums**: Ban `enum` and `const enum`. Use literal unions + maps.
+- **Exports**: Prefer named exports; barrel files should be _type‑only_ when possible.
+
+## Language & types
+
+- **No `any`**. Use `unknown` + narrowing; validate then narrow at edges.
+- Prefer **`type`** over `interface` (use `interface` only for declaration merging / `implements`).
+- Prefer **`satisfies`** over `as` for object conformance; forbid double assertions.
+- Use **discriminated unions** for states.
+- Default to **`readonly`** params/collections; accept `ReadonlyArray<T>`; copy‑on‑write.
+- Use **`as const`** for literal configs.
+- Model absence explicitly (`undefined | T`) or with a distinct union variant.
+- **Brands** for invariants:
+  ```ts
+  type Brand<T, B extends string> = T & { readonly __brand: B };
+  ```
+- Assertion helpers:
+  ```ts
+  export function invariant(c: unknown, m?: string): asserts c {
+    if (!c) throw new Error(m ?? "invariant_failed");
+  }
+  export const isNonNullish = <T>(x: T): x is NonNullable<T> => x != null;
+  ```
+
+## Runtime safety (boundaries & IO)
+
+- Validate **all** inputs at boundaries (HTTP, queues, files, env, DB reads). Derive types via `z.infer`.
+- Normalize `null → undefined` at edges.
+- **Never throw strings**. Use `Error` subclasses with stable `code` + metadata.
+- **No floating promises**: `await`, `return`, chain handlers, or **`void`** for intentional fire‑and‑forget (with internal try/catch).
+- **Cancellation**: IO APIs accept `AbortSignal`; document semantics.
+- **Bounded concurrency**: utilities must report which items failed (index/key).
+
+## Error model
+
+- Domain surface: `ServiceError`/`DomainError` with literal‑union `code` and optional `cause`.
+- **Hybrid rule**: predictable/recoverable → `Result<T,E>`; programmer errors → throw (crash fast).
+  ```ts
+  export type Result<T, E extends string> =
+    | { ok: true; value: T }
+    | { ok: false; code: E; cause?: Error };
+  ```
+- Translate infra → domain at edges; controllers map domain → transport without rethrow.
+- **One throw → one log** at the boundary.
+
+## API & function design
+
+- Small, single‑responsibility; prefer purity.
+- Exported signatures are **explicit** (no implicit `any`), and **stable**.
+- Prefer composition over inheritance; localize side effects.
+- Avoid `Promise<void>` on exported APIs (use `Promise<undefined>` if needed to prevent silent loss).
+- Accept `ReadonlyArray<T>`; return new arrays only when allocating.
+
+## Observability (minimal, structured, type‑safe)
+
+- **Structured logging only**; never log secrets/PII.
+- Log **once** per error at edges with `event`, `code`, `message`, `stack`, key context (e.g., `requestId`, entity IDs).
+- Typed events example:
+  ```ts
+  type LogEvent =
+    | { name: "user.created"; userId: UserId }
+    | { name: "audit.failed"; requestId: string; code: ErrorCode };
+  ```
+- Metrics/tracing: stable names (`as const`), annotate spans with status/error/keys.
+
+## Common pitfalls
+
+- No truthiness for numbers/strings/arrays; be explicit (`value !== 0`, `value.length > 0`).
+- Always pass radix to `parseInt`; check `Number.isNaN`.
+- Big IDs → `bigint` or string to avoid IEEE‑754 issues.
+- Time: be explicit about UTC/timezones; don’t mix silently.
+- No ambient/global augmentations except reviewed `globals.d.ts`.
+- Do not mutate input params.
+
+## Micro‑patterns
+
+- Exhaustive map over union:
+  ```ts
+  type State = "idle" | "busy" | "error";
+  const labels: { [K in State]: string } = {
+    idle: "Idle",
+    busy: "Busy",
+    error: "Error",
+  };
+  const labelOf = (s: State) => labels[s];
+  ```
+- Non‑empty arrays:
+  ```ts
+  export type NonEmptyArray<T> = readonly [T, ...T[]];
+  ```
+- Safe index access:
+  ```ts
+  export const get = <T>(a: readonly T[], i: number) =>
+    i >= 0 && i < a.length ? a[i] : undefined;
+  ```
+- Event map over stringly emitters via keyed payloads.
+
+## Architecture & module boundaries
+
+- **Feature‑first layout**, not type‑first. Co‑locate UI/API/types/tests by feature (e.g., `src/features/auth/`).
+- Minimal top‑level:
+  - `src/` (app code)
+  - `src/features/` (feature modules)
+  - `src/lib` or `src/shared` (cross‑cutting: logging, design system, API clients)
+  - `src/types` (sparse, truly global types)
+  - `tests/` (E2E/integration spanning features). Unit tests are co‑located with sources.
+  - `dist/` (build output)
+- **Barrels**: each feature exposes an explicit public API via `index.ts` (prefer `export type { ... }` for type‑only barrels).
+- **DIP/DI**: high‑level modules depend on abstractions; constructor injection; app composition root wires concretes.
+
+## File & naming rules
+
+- **Files**: `kebab-case.ts` / `kebab-case.tsx` (e.g., `user-profile.service.ts`).
+- **Identifiers**:
+  - `PascalCase`: types, classes.
+  - `camelCase`: variables, params, functions, methods.
+  - `CONSTANT_CASE`: top‑level constants and enum‑like members.
+- **Interface names**: **no `I` prefix** (e.g., `User`, not `IUser`).
+- **Privacy**: use `private`; **no leading `_`**.
+- **Tests**: co‑locate as `<name>.spec.ts` next to implementation.
+- **Barrels**: `index.ts` per feature to define public surface.
