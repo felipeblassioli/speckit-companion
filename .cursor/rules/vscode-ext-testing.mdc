@@ -1,0 +1,38 @@
+---
+title: VS Code Extension Testing
+description: Testing strategy for VS Code extensions: unit vs integration, running via @vscode/test-cli, deterministic fixtures, and host-safe assertions.
+glob: "{src,test}/**/*.{ts,tsx,js,mjs,cjs}"
+alwaysApply: false
+---
+
+# VS Code Extension Testing
+
+## Test tiers
+1. **Unit tests (default)**: pure services/utilities without VS Code APIs.
+2. **Extension integration tests**: run inside VS Code’s Extension Host and assert commands, editors, and workspace behavior.
+
+## Recommended runner for extension tests
+- Prefer the official Test CLI flow:
+  - Install `@vscode/test-cli` and `@vscode/test-electron` for desktop-hosted tests. :contentReference[oaicite:14]{index=14}
+  - Use the `vscode-test` script entrypoint.
+  - The CLI uses Mocha under the hood. :contentReference[oaicite:15]{index=15}
+
+## Determinism requirements
+- Tests must not depend on:
+  - user machine state
+  - existing extensions
+  - existing workspace settings
+- Prefer fixture workspaces committed under `test/fixtures/**`.
+- Prefer temp directories for generated files; clean up after each test.
+
+## Extension Host assertions
+- Prefer assertions on:
+  - registered commands (invocation + output)
+  - edits applied via `WorkspaceEdit`
+  - diagnostics produced
+  - config changes surfaced via VS Code APIs
+- Avoid snapshotting large editor state; assert the minimum behavior that proves correctness.
+
+## Common pitfalls
+- Using the real home directory or real user settings in tests.
+- Writing tests that pass locally but fail headless due to timing; prefer explicit awaits and bounded retries.

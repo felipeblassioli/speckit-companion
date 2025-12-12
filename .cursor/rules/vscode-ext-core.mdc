@@ -1,0 +1,70 @@
+---
+title: VS Code Extension Core Architecture
+description: Guidelines for building VS Code extensions in TypeScript: activation, command wiring, disposables, remote-safe APIs, and layering for testability.
+glob: "{src,test,scripts}/**/*.{ts,tsx,js,mjs,cjs}"
+alwaysApply: false
+---
+
+# VS Code Extension Core Architecture
+
+## Goals
+- Keep **activation fast** and predictable (treat activation like a cold-start budget).
+- Make all side-effects explicit and disposable.
+- Keep business logic testable without the VS Code host.
+
+## Structure
+Prefer this split:
+- `src/extension.ts` — `activate/deactivate`, *wires* services + commands.
+- `src/commands/*` — command handlers (thin orchestrators).
+- `src/services/*` — pure-ish logic, minimal VS Code API usage.
+- `src/vscode/*` — VS Code adapters (workspace, editors, UI).
+
+## Activation
+- Prefer to **activate only when needed**, not eagerly. :contentReference[oaicite:3]{index=3}
+- Avoid heavy work at module top-level; delay until `activate()` or later.
+- Prefer lazy initialization (instantiate expensive services on first command execution).
+
+### Pattern: explicit disposables
+```ts
+import * as vscode from 'vscode';
+
+export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
+  const d1 = vscode.commands.registerCommand('publisher.ext.doThing', async () => {
+    // ...
+  });
+
+  ctx.subscriptions.push(d1);
+}
+
+export function deactivate(): void {
+  // Prefer relying on ctx.subscriptions disposal; keep explicit only if needed.
+}
+```
+
+## Commands
+
+* Keep handlers small: parse inputs → call service → render/notify → return.
+* Use stable command IDs: `publisher.extensionName.action` (no spaces, no renames without migration).
+
+## Remote-safe file access
+
+* Prefer VS Code filesystem APIs (e.g. `workspace.fs`) so the extension behaves in remote scenarios. ([Visual Studio Code][1])
+
+## Cancellation & responsiveness
+
+* If you call long-running operations, accept a `CancellationToken` and check it.
+* Prefer progress UX for long tasks (notification or window progress).
+
+## Error handling
+
+* Don’t swallow errors. Prefer:
+
+  * user-facing: `vscode.window.showErrorMessage(...)` with actionable text
+  * developer-facing: `console.error(err)` (or a logger abstraction)
+* For expected failures, return structured results instead of throwing.
+
+## Common pitfalls
+
+* Forgetting to push disposables into `context.subscriptions` → leaks.
+* Doing synchronous heavy work in activation → extension host jank.
+* Using Node `fs` directly for workspace files → breaks in remote cases. ([Visual Studio Code][1])
